@@ -102,3 +102,28 @@ def mover_persona_ajax(request, persona_id):
         },
         status=200 if ok else 409,
     )
+
+
+@require_POST
+def guardar_posicion_puesto(request, puesto_id):
+    puesto = get_object_or_404(Puesto, pk=puesto_id, activo=True)
+    try:
+        x = int(float(request.POST.get("x", 50)))
+        y = int(float(request.POST.get("y", 50)))
+    except (TypeError, ValueError):
+        return JsonResponse({"ok": False, "mensaje": "Coordenadas inválidas."}, status=400)
+
+    x = max(0, min(100, x))
+    y = max(0, min(100, y))
+    puesto.x = x
+    puesto.y = y
+    puesto.save(update_fields=["x", "y"])
+
+    return JsonResponse(
+        {
+            "ok": True,
+            "mensaje": f"Posición de {puesto.codigo} guardada.",
+            "x": x,
+            "y": y,
+        }
+    )
