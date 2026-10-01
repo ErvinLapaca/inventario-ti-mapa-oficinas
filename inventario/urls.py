@@ -7,4 +7,5 @@ urlpatterns = [
     path("", views.dashboard, name="dashboard"),
     path("personas/<int:persona_id>/mover/", views.mover_persona, name="mover_persona"),
     path("personas/<int:persona_id>/mover-mapa/", views.mover_persona_ajax, name="mover_persona_ajax"),
+    path("puestos/<int:puesto_id>/posicion/", views.guardar_posicion_puesto, name="guardar_posicion_puesto"),
 ]
