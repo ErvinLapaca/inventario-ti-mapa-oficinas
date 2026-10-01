@@ -1,0 +1,122 @@
+{% load static %}
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Inventario TI</title>
+  <link rel="stylesheet" href="{% static 'inventario/app.css' %}">
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar">
+    <h1>Inventario TI</h1>
+    <p class="muted">Mapa de oficinas</p>
+    <a class="nav active" href="/">Mapa</a>
+    <a class="nav" href="/admin/inventario/persona/">Usuarios</a>
+    <a class="nav" href="/admin/inventario/equipo/">Equipos</a>
+    <a class="nav" href="/admin/inventario/puntored/">Red</a>
+    <a class="nav" href="/admin/inventario/movimiento/">Movimientos</a>
+    <a class="nav" href="/admin/">Administración</a>
+    <div class="stats">
+      <strong>{{ personas_total }}</strong><span>usuarios</span>
+      <strong>{{ equipos_total }}</strong><span>equipos</span>
+    </div>
+  </aside>
+
+  <main>
+    <header class="topbar">
+      <form method="get" class="search">
+        {% if piso %}<input type="hidden" name="piso" value="{{ piso.id }}">{% endif %}
+        <input name="q" value="{{ q }}" placeholder="Buscar usuario, equipo, IP o MAC">
+        <button>Buscar</button>
+      </form>
+      <select onchange="location='/?piso='+this.value">
+        {% for item in pisos %}
+          <option value="{{ item.id }}" {% if piso and item.id == piso.id %}selected{% endif %}>{{ item.edificio.nombre }} · {{ item.nombre }}</option>
+        {% endfor %}
+      </select>
+    </header>
+
+    <section class="heading">
+      <div>
+        <h2>{% if piso %}{{ piso.nombre }}{% else %}Sin pisos configurados{% endif %}</h2>
+        <p class="muted">Haz clic en una persona para ver sus datos y moverla.</p>
+      </div>
+      <a class="button" href="/admin/inventario/persona/add/">+ Nuevo usuario</a>
+    </section>
+
+    <section class="workspace">
+      <div class="map">
+        {% for puesto in puestos %}
+          <div class="desk" style="left:{{ puesto.x }}%;top:{{ puesto.y }}%;">
+            <small>{{ puesto.oficina.nombre }} · {{ puesto.codigo }}</small>
+          </div>
+        {% endfor %}
+
+        {% for persona in personas %}
+          {% if persona.puesto %}
+          <button class="person-marker"
+            style="left:{{ persona.puesto.x }}%;top:{{ persona.puesto.y }}%;"
+            onclick="showPerson('p{{ persona.id }}')">
+            👤 {{ persona.nombre_completo }}
+          </button>
+
+          <dialog id="p{{ persona.id }}">
+            <form method="dialog"><button class="close">×</button></form>
+            <h3>{{ persona.nombre_completo }}</h3>
+            <p><b>Cargo:</b> {{ persona.cargo|default:"—" }}</p>
+            <p><b>Área:</b> {{ persona.area|default:"—" }}</p>
+            <p><b>Ubicación:</b> {{ persona.puesto.oficina.nombre }} · {{ persona.puesto.codigo }}</p>
+            <p><b>Correo:</b> {{ persona.correo|default:"—" }}</p>
+
+            <h4>Equipos asignados</h4>
+            <ul>
+            {% for eq in persona.equipos.all %}
+              <li><b>{{ eq.codigo_activo }}</b> · {{ eq.get_tipo_display }} · {{ eq.marca }} {{ eq.modelo }}
+                {% if eq.ip %}<br><small>IP {{ eq.ip }} · MAC {{ eq.mac|default:"—" }}</small>{% endif %}
+              </li>
+            {% empty %}
+              <li>Sin equipos asignados</li>
+            {% endfor %}
+            </ul>
+
+            <h4>Mover usuario</h4>
+            <form method="post" action="{% url 'inventario:mover_persona' persona.id %}">
+              {% csrf_token %}
+              <select name="puesto_destino" required>
+                {% for p in puestos %}
+                  <option value="{{ p.id }}" {% if p.id == persona.puesto_id %}selected{% endif %}>{{ p.oficina.nombre }} · {{ p.codigo }}</option>
+                {% endfor %}
+              </select>
+              <input name="motivo" placeholder="Motivo del movimiento">
+              <button class="button">Guardar movimiento</button>
+            </form>
+          </dialog>
+          {% endif %}
+        {% endfor %}
+      </div>
+
+      <aside class="panel">
+        <h3>Usuarios del piso</h3>
+        {% for persona in personas %}
+          <button class="person-row" onclick="showPerson('p{{ persona.id }}')">
+            <span>👤</span>
+            <span><b>{{ persona.nombre_completo }}</b><small>{{ persona.area }} · {{ persona.puesto.codigo }}</small></span>
+          </button>
+        {% empty %}
+          <p class="muted">No hay resultados.</p>
+        {% endfor %}
+      </aside>
+    </section>
+  </main>
+</div>
+
+<script>
+function showPerson(id) {
+  const d = document.getElementById(id);
+  if (d) d.showModal();
+}
+</script>
+</body>
+</html>
