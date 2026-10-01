@@ -1,4 +1,5 @@
 from django.db.models import Q
+from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 
@@ -23,6 +24,7 @@ def dashboard(request):
             | Q(equipos__codigo_activo__icontains=q)
             | Q(equipos__ip__icontains=q)
             | Q(equipos__mac__icontains=q)
+            | Q(puesto__puntos_red__codigo__icontains=q)
         ).distinct()
 
     if piso:
@@ -36,11 +38,14 @@ def dashboard(request):
         else Puesto.objects.none()
     )
 
+    oficinas = piso.oficinas.prefetch_related("puestos").all() if piso else []
+
     contexto = {
         "pisos": pisos,
         "piso": piso,
         "personas": personas,
         "puestos": puestos,
+        "oficinas": oficinas,
         "equipos_total": Equipo.objects.count(),
         "personas_total": Persona.objects.filter(activo=True).count(),
         "q": q,
@@ -48,20 +53,52 @@ def dashboard(request):
     return render(request, "inventario/dashboard.html", contexto)
 
 
-@require_POST
-def mover_persona(request, persona_id):
-    persona = get_object_or_404(Persona, pk=persona_id)
-    destino = get_object_or_404(Puesto, pk=request.POST.get("puesto_destino"), activo=True)
+def _mover(persona, destino, motivo=""):
     origen = persona.puesto
+    ocupante = Persona.objects.filter(puesto=destino).exclude(pk=persona.pk).first()
+    if ocupante:
+        return False, f"El puesto {destino.codigo} ya está ocupado por {ocupante.nombre_completo}."
 
     if origen != destino:
         Movimiento.objects.create(
             persona=persona,
             puesto_origen=origen,
             puesto_destino=destino,
-            motivo=request.POST.get("motivo", ""),
+            motivo=motivo,
         )
         persona.puesto = destino
         persona.save(update_fields=["puesto"])
 
+    return True, "Movimiento guardado."
+
+
+@require_POST
+def mover_persona(request, persona_id):
+    persona = get_object_or_404(Persona, pk=persona_id)
+    destino = get_object_or_404(Puesto, pk=request.POST.get("puesto_destino"), activo=True)
+    ok, mensaje = _mover(persona, destino, request.POST.get("motivo", ""))
+    if not ok:
+        return render(
+            request,
+            "inventario/error_movimiento.html",
+            {"mensaje": mensaje, "piso_id": destino.oficina.piso_id},
+            status=409,
+        )
     return redirect(f"/?piso={destino.oficina.piso_id}")
+
+
+@require_POST
+def mover_persona_ajax(request, persona_id):
+    persona = get_object_or_404(Persona, pk=persona_id)
+    destino = get_object_or_404(Puesto, pk=request.POST.get("puesto_destino"), activo=True)
+    ok, mensaje = _mover(persona, destino, "Movimiento mediante mapa")
+    return JsonResponse(
+        {
+            "ok": ok,
+            "mensaje": mensaje,
+            "persona": persona.nombre_completo,
+            "puesto": destino.codigo,
+            "oficina": destino.oficina.nombre,
+        },
+        status=200 if ok else 409,
+    )
