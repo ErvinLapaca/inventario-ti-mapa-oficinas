@@ -21,7 +21,6 @@
     <a class="nav" href="/admin/inventario/oficina/">🏢 Oficinas y espacios</a>
     <a class="nav" href="/admin/inventario/movimiento/">↔ Movimientos</a>
     <a class="nav" href="/admin/">⚙ Administración</a>
-
     <div class="stats">
       <div><strong>{{ personas_total }}</strong><span>Usuarios</span></div>
       <div><strong>{{ equipos_total }}</strong><span>Equipos</span></div>
@@ -37,9 +36,7 @@
       </form>
       <select onchange="location='/?piso='+this.value">
         {% for item in pisos %}
-          <option value="{{ item.id }}" {% if piso and item.id == piso.id %}selected{% endif %}>
-            {{ item.edificio.nombre }} · {{ item.nombre }}
-          </option>
+          <option value="{{ item.id }}" {% if piso and item.id == piso.id %}selected{% endif %}>{{ item.edificio.nombre }} · {{ item.nombre }}</option>
         {% empty %}
           <option>Sin pisos</option>
         {% endfor %}
@@ -49,9 +46,13 @@
     <section class="heading">
       <div>
         <h2>{% if piso %}{{ piso.nombre }} · {{ piso.edificio.nombre }}{% else %}Sin pisos configurados{% endif %}</h2>
-        <p class="muted">Arrastra una persona y suéltala sobre otro puesto para registrar el movimiento.</p>
+        <p class="muted" id="modeHelp">Arrastra una persona y suéltala sobre otro puesto para registrar el movimiento.</p>
       </div>
       <div class="actions">
+        {% if piso %}
+          <a class="button secondary" href="/admin/inventario/piso/{{ piso.id }}/change/">🖼 Cargar/cambiar plano</a>
+          <button class="button warning" type="button" id="editMapButton" onclick="toggleMapEditor()">✥ Editar mapa</button>
+        {% endif %}
         <a class="button secondary" href="/admin/inventario/puesto/add/">+ Puesto</a>
         <a class="button" href="/admin/inventario/persona/add/">+ Nuevo usuario</a>
       </div>
@@ -62,23 +63,31 @@
       <span><i class="dot pc"></i> Computadora</span>
       <span><i class="dot red"></i> Punto de red</span>
       <span><i class="dot printer"></i> Impresora</span>
+      {% if piso and piso.plano %}<span class="plan-status">✓ Plano cargado</span>{% endif %}
     </section>
 
     <section class="workspace">
-      <div class="map" id="officeMap">
+      <div class="map {% if piso and piso.plano %}has-plan{% endif %}" id="officeMap"
+           {% if piso and piso.plano %}style="background-image:url('{{ piso.plano.url }}');"{% endif %}>
         {% if not piso %}
           <div class="empty-map">
             <h3>No hay un piso para mostrar</h3>
             <p>Crea un edificio, un piso, oficinas y puestos desde Administración.</p>
             <a class="button" href="/admin/inventario/edificio/add/">Crear edificio</a>
           </div>
+        {% elif not piso.plano %}
+          <div class="plan-hint">
+            <b>Este piso todavía no tiene plano.</b>
+            <span>Puedes usar la cuadrícula o cargar una imagen desde “Cargar/cambiar plano”.</span>
+          </div>
         {% endif %}
 
         {% for puesto in puestos %}
-          <div class="desk drop-zone"
+          <div class="desk drop-zone editable-position"
                data-puesto="{{ puesto.id }}"
                style="left:{{ puesto.x }}%;top:{{ puesto.y }}%;"
-               title="Soltar usuario aquí">
+               title="Puesto {{ puesto.codigo }}">
+            <div class="move-handle">✥</div>
             <div class="desk-title">{{ puesto.oficina.nombre }}</div>
             <div class="desk-code">{{ puesto.codigo }}</div>
             <div class="asset-icons">
@@ -103,6 +112,7 @@
           <button class="person-marker"
             draggable="true"
             data-persona="{{ persona.id }}"
+            data-puesto="{{ persona.puesto.id }}"
             style="left:{{ persona.puesto.x }}%;top:{{ persona.puesto.y }}%;"
             onclick="showPerson('p{{ persona.id }}')"
             title="Arrastra para mover · clic para ver detalle">
@@ -114,10 +124,7 @@
             <form method="dialog"><button class="close">×</button></form>
             <div class="profile-head">
               <div class="big-avatar">👤</div>
-              <div>
-                <h3>{{ persona.nombre_completo }}</h3>
-                <span class="status">Activo</span>
-              </div>
+              <div><h3>{{ persona.nombre_completo }}</h3><span class="status">Activo</span></div>
             </div>
 
             <div class="details-grid">
@@ -131,26 +138,19 @@
 
             <h4>Equipos asignados</h4>
             <div class="cards">
-            {% for eq in persona.equipos.all %}
-              <div class="equipment-card">
-                <div class="eq-icon">{% if eq.tipo == "IMPRESORA" %}🖨{% elif eq.tipo == "TELEFONO" %}☎{% else %}🖥{% endif %}</div>
-                <div>
-                  <b>{{ eq.codigo_activo }}</b>
-                  <small>{{ eq.get_tipo_display }} · {{ eq.marca }} {{ eq.modelo }}</small>
-                  {% if eq.ip %}<small>IP {{ eq.ip }} · MAC {{ eq.mac|default:"—" }}</small>{% endif %}
+              {% for eq in persona.equipos.all %}
+                <div class="equipment-card">
+                  <div class="eq-icon">{% if eq.tipo == "IMPRESORA" %}🖨{% elif eq.tipo == "TELEFONO" %}☎{% else %}🖥{% endif %}</div>
+                  <div><b>{{ eq.codigo_activo }}</b><small>{{ eq.get_tipo_display }} · {{ eq.marca }} {{ eq.modelo }}</small>{% if eq.ip %}<small>IP {{ eq.ip }} · MAC {{ eq.mac|default:"—" }}</small>{% endif %}</div>
                 </div>
-              </div>
-            {% empty %}
-              <p class="muted">Sin equipos asignados.</p>
-            {% endfor %}
+              {% empty %}
+                <p class="muted">Sin equipos asignados.</p>
+              {% endfor %}
             </div>
 
             <h4>Puntos de red del puesto</h4>
             {% for red in persona.puesto.puntos_red.all %}
-              <div class="network-card">
-                <b>🔌 {{ red.codigo }}</b>
-                <small>Switch: {{ red.switch|default:"—" }} · Puerto: {{ red.puerto_switch|default:"—" }} · VLAN: {{ red.vlan|default:"—" }}</small>
-              </div>
+              <div class="network-card"><b>🔌 {{ red.codigo }}</b><small>Switch: {{ red.switch|default:"—" }} · Puerto: {{ red.puerto_switch|default:"—" }} · VLAN: {{ red.vlan|default:"—" }}</small></div>
             {% empty %}
               <p class="muted">No hay puntos de red asociados.</p>
             {% endfor %}
@@ -181,13 +181,6 @@
         {% empty %}
           <p class="muted">No hay resultados.</p>
         {% endfor %}
-
-        {% if oficinas %}
-        <h3 class="section-title">Oficinas</h3>
-        {% for oficina in oficinas %}
-          <div class="office-row"><span>🏢</span><div><b>{{ oficina.nombre }}</b><small>{{ oficina.puestos.count }} puestos</small></div></div>
-        {% endfor %}
-        {% endif %}
       </aside>
     </section>
 
@@ -197,6 +190,7 @@
 
 <script>
 function showPerson(id) {
+  if (mapEditMode) return;
   const d = document.getElementById(id);
   if (d) d.showModal();
 }
@@ -207,9 +201,15 @@ function getCookie(name) {
 }
 
 let draggedPerson = null;
+let mapEditMode = false;
+let movingDesk = null;
 
 document.querySelectorAll('.person-marker').forEach(marker => {
   marker.addEventListener('dragstart', e => {
+    if (mapEditMode) {
+      e.preventDefault();
+      return;
+    }
     draggedPerson = marker.dataset.persona;
     marker.classList.add('dragging');
     e.dataTransfer.effectAllowed = 'move';
@@ -219,11 +219,13 @@ document.querySelectorAll('.person-marker').forEach(marker => {
 
 document.querySelectorAll('.drop-zone').forEach(zone => {
   zone.addEventListener('dragover', e => {
+    if (mapEditMode) return;
     e.preventDefault();
     zone.classList.add('drop-active');
   });
   zone.addEventListener('dragleave', () => zone.classList.remove('drop-active'));
   zone.addEventListener('drop', async e => {
+    if (mapEditMode) return;
     e.preventDefault();
     zone.classList.remove('drop-active');
     if (!draggedPerson) return;
@@ -231,18 +233,74 @@ document.querySelectorAll('.drop-zone').forEach(zone => {
     const data = new FormData();
     data.append('puesto_destino', zone.dataset.puesto);
 
-    try {
-      const response = await fetch('/personas/' + draggedPerson + '/mover-mapa/', {
-        method: 'POST',
-        headers: {'X-CSRFToken': getCookie('csrftoken')},
-        body: data
-      });
-      const result = await response.json();
-      showToast(result.mensaje, result.ok);
-      if (result.ok) setTimeout(() => location.reload(), 600);
-    } catch (error) {
-      showToast('No se pudo guardar el movimiento.', false);
-    }
+    const response = await fetch('/personas/' + draggedPerson + '/mover-mapa/', {
+      method: 'POST',
+      headers: {'X-CSRFToken': getCookie('csrftoken')},
+      body: data
+    });
+    const result = await response.json();
+    showToast(result.mensaje, result.ok);
+    if (result.ok) setTimeout(() => location.reload(), 500);
+  });
+});
+
+function toggleMapEditor() {
+  mapEditMode = !mapEditMode;
+  document.body.classList.toggle('map-edit-mode', mapEditMode);
+  const button = document.getElementById('editMapButton');
+  const help = document.getElementById('modeHelp');
+
+  if (mapEditMode) {
+    button.textContent = '✓ Finalizar edición';
+    button.classList.add('active-edit');
+    help.textContent = 'Modo edición activo: arrastra los puestos para ubicarlos sobre el plano.';
+  } else {
+    button.textContent = '✥ Editar mapa';
+    button.classList.remove('active-edit');
+    help.textContent = 'Arrastra una persona y suéltala sobre otro puesto para registrar el movimiento.';
+  }
+}
+
+document.querySelectorAll('.editable-position').forEach(desk => {
+  desk.addEventListener('pointerdown', e => {
+    if (!mapEditMode || e.target.closest('.asset')) return;
+    movingDesk = desk;
+    desk.setPointerCapture(e.pointerId);
+    desk.classList.add('moving-position');
+    e.preventDefault();
+  });
+
+  desk.addEventListener('pointermove', e => {
+    if (!mapEditMode || movingDesk !== desk) return;
+    const map = document.getElementById('officeMap');
+    const rect = map.getBoundingClientRect();
+    let x = ((e.clientX - rect.left) / rect.width) * 100;
+    let y = ((e.clientY - rect.top) / rect.height) * 100;
+    x = Math.max(2, Math.min(98, x));
+    y = Math.max(2, Math.min(98, y));
+    desk.style.left = x + '%';
+    desk.style.top = y + '%';
+    document.querySelectorAll('.person-marker[data-puesto="' + desk.dataset.puesto + '"]').forEach(marker => {
+      marker.style.left = x + '%';
+      marker.style.top = y + '%';
+    });
+  });
+
+  desk.addEventListener('pointerup', async () => {
+    if (!mapEditMode || movingDesk !== desk) return;
+    movingDesk = null;
+    desk.classList.remove('moving-position');
+    const data = new FormData();
+    data.append('x', parseFloat(desk.style.left));
+    data.append('y', parseFloat(desk.style.top));
+
+    const response = await fetch('/puestos/' + desk.dataset.puesto + '/posicion/', {
+      method: 'POST',
+      headers: {'X-CSRFToken': getCookie('csrftoken')},
+      body: data
+    });
+    const result = await response.json();
+    showToast(result.mensaje, result.ok);
   });
 });
 
@@ -250,7 +308,7 @@ function showToast(message, ok=true) {
   const toast = document.getElementById('toast');
   toast.textContent = message;
   toast.className = 'toast show ' + (ok ? 'ok' : 'error');
-  setTimeout(() => toast.classList.remove('show'), 2800);
+  setTimeout(() => toast.classList.remove('show'), 2600);
 }
 </script>
 </body>
