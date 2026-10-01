@@ -13,6 +13,12 @@ class Piso(models.Model):
     edificio = models.ForeignKey(Edificio, on_delete=models.CASCADE, related_name="pisos")
     nombre = models.CharField(max_length=80)
     orden = models.PositiveIntegerField(default=1)
+    plano = models.ImageField(
+        upload_to="planos/",
+        blank=True,
+        null=True,
+        help_text="Imagen del plano del piso (PNG, JPG o WEBP).",
+    )
 
     class Meta:
         ordering = ["edificio", "orden"]
